@@ -1,4 +1,4 @@
-package efinomina.message.efinomina.domain.model.entity;
+package efinomina.message.efinomina.infraestructure.persistence.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

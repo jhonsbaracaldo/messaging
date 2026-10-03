@@ -1,4 +1,4 @@
-package efinomina.message.efinomina.domain.model.entity;
+package efinomina.message.efinomina.infraestructure.persistence.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -23,6 +23,9 @@ public class Role {
 
     @Column(name = "descripcion", length = 255)
     private String descripcion;
+
+    @Column(name = "activo")
+    private boolean active;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

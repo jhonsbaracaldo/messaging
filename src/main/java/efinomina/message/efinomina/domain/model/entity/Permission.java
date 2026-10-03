@@ -2,7 +2,7 @@ package efinomina.message.efinomina.domain.model.entity;
 
 import java.sql.Date;
 
-public class PermissionEntity {
+public class Permission {
 
     private Integer id;
     private String code;
@@ -11,7 +11,7 @@ public class PermissionEntity {
     private boolean active;
     private Date created_at;
 
-    public PermissionEntity(Integer id, String code, String name, String description, boolean active, Date created_at) {
+    public Permission(Integer id, String code, String name, String description, boolean active, Date created_at) {
         this.id = id;
         this.code = code;
         this.name = name;
@@ -20,7 +20,7 @@ public class PermissionEntity {
         this.created_at = created_at;
     }
 
-    public PermissionEntity() {
+    public Permission() {
     }
 
     public Integer getId() {

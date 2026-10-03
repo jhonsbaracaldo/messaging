@@ -8,12 +8,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
+
 @RestController
 @RequestMapping("/permissions")
-public class Permission {
+public class PermissionController {
 
-    public Permission(PermissionService permissionService) {
+    public PermissionController(PermissionService permissionService) {
         this.permissionService = permissionService;
     }
 
@@ -26,8 +26,14 @@ public class Permission {
     }
 
     @GetMapping ("list")
-    public List<PermissionDto> listPermissions() {
-       return permissionService.findAllPermission();
+    public ResponseEntity<List<PermissionDto>> listPermissions() {
+        List<PermissionDto> permissions = permissionService.findAllPermission();
+
+        if (permissions.isEmpty()) {
+            return ResponseEntity.noContent().build(); // HTTP 204
+        }
+
+        return ResponseEntity.ok(permissions); // HTTP 200
     }
 
 
@@ -38,8 +44,9 @@ public class Permission {
     }
 
      @DeleteMapping("delete/{id}")
-    public Optional<PermissionDto> deletePermission(@PathVariable Integer id) {
-        return permissionService.deletePermission(id);
+    public ResponseEntity<PermissionDto> deletePermission(@PathVariable Integer id) {
+        permissionService.deletePermission(id);
+        return ResponseEntity.noContent().build();
     }
 
 

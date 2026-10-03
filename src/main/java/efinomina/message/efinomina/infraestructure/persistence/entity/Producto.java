@@ -1,4 +1,4 @@
-package efinomina.message.efinomina.domain.model.entity;
+package efinomina.message.efinomina.infraestructure.persistence.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "productos")
+@Table( name = "productos")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
