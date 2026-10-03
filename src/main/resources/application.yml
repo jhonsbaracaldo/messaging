@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/barberia}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:1234}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    defer-datasource-initialization: true
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        show_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-secret-key-change-me-please-32bytes-min}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+whatsapp:
+  service:
+    url: ${WHATSAPP_SERVICE_URL:http://localhost:3001}
+  notifications:
+    enabled: ${WHATSAPP_NOTIFICATIONS_ENABLED:true}
+    destination-number: ${WHATSAPP_DESTINATION_NUMBER:573105752462}
+
+google:
+  sheets:
+    webhook:
+      url: ${GOOGLE_SHEETS_WEBHOOK_URL:https://script.google.com/macros/s/AKfycbzvX3tmkD61nfdYnC4ZXTasDN74GTjBJsX1V0s44Aj2AJher-kxZt359ZcPbQeTRUlQ/exec}
+      enabled: ${GOOGLE_SHEETS_WEBHOOK_ENABLED:true}
+
