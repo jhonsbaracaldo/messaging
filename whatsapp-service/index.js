@@ -6,7 +6,15 @@ const PORT = process.env.PORT || 3001;
 
 const client = new Client({
   authStrategy: new LocalAuth(),
-  puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+  puppeteer: {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage'
+    ]
+  },
 });
 
 let isReady = false;
