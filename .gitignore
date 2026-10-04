@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### WhatsApp Service ###
+whatsapp-service/node_modules/
+whatsapp-service/.wwebjs_auth/
+whatsapp-service/.wwebjs_cache/
+whatsapp-service/.env
