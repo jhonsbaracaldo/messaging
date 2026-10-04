@@ -29,6 +29,7 @@ whatsapp:
   notifications:
     enabled: ${WHATSAPP_NOTIFICATIONS_ENABLED:true}
     destination-number: ${WHATSAPP_DESTINATION_NUMBER:573105752462}
+    group-id: ${WHATSAPP_GROUP_ID:}
 
 google:
   sheets:
