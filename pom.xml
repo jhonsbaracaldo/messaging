@@ -8,11 +8,11 @@
 		<version>3.4.2</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>efinomina.message</groupId>
-	<artifactId>efinomina</artifactId>
+	<groupId>barberia</groupId>
+	<artifactId>barberia</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>efinomina</name>
-	<description>projecto de mensajeria efinomina</description>
+	<name>barberia</name>
+	<description>barberia barbaros</description>
 	<url/>
 	<licenses>
 		<license/>
