@@ -13,18 +13,36 @@ const client = new Client({
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage'
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process',
+      '--disable-extensions',
+      '--disable-software-rasterizer'
     ]
   },
 });
 
 let isReady = false;
 let lastQr = null;
+let lastPairingCode = null;
+let pairingPhoneNumber = null;
 
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
   lastQr = qr;
-  console.log('Nuevo QR generado. Visita /qr para escanearlo.');
+  lastPairingCode = null;
+  console.log('Nuevo QR generado. Visita /qr para escanearlo o /pair para vincular por número.');
   qrcode.generate(qr, { small: true });
+
+  if (pairingPhoneNumber) {
+    try {
+      const code = await client.requestPairingCode(pairingPhoneNumber);
+      lastPairingCode = code;
+      console.log(`📱 Código de emparejamiento para ${pairingPhoneNumber}: ${code}`);
+    } catch (err) {
+      console.error('Error solicitando código de emparejamiento:', err);
+    }
+  }
 });
 
 client.on('authenticated', () => {
@@ -51,7 +69,14 @@ client.on('ready', () => {
 
 client.on('disconnected', (reason) => {
   isReady = false;
+  lastQr = null;
+  lastPairingCode = null;
   console.warn('❌ WhatsApp DESCONECTADO:', reason);
+  // Reintentar inicialización después de 5 segundos
+  setTimeout(() => {
+    console.log('🔄 Reintentando inicialización de WhatsApp...');
+    client.initialize().catch(err => console.error('Error al reinicializar:', err));
+  }, 5000);
 });
 
 client.initialize();
@@ -106,6 +131,115 @@ app.get('/qr', async (req, res) => {
   } catch (err) {
     res.status(500).send('Error generando el QR.');
   }
+});
+
+// ── Vinculación por número (pairing code) ─────────────────────────────────
+app.get('/pair', (req, res) => {
+  if (isReady) {
+    return res.send(`
+      <!DOCTYPE html><html><head><title>Vincular WhatsApp</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:2rem}</style></head>
+      <body><h2>&#9989; WhatsApp ya está conectado.</h2><p>No necesitas vincular de nuevo.</p></body></html>
+    `);
+  }
+
+  const codeHtml = lastPairingCode
+    ? `<div id="code-box">
+         <p>Ingresa este código en tu app de WhatsApp:<br>
+         <strong>Menu → Dispositivos vinculados → Vincular un dispositivo → Vincular con número de teléfono</strong></p>
+         <div style="font-size:2.5rem;letter-spacing:0.4rem;font-weight:bold;color:#075e54;margin:1rem 0">${lastPairingCode}</div>
+         <p><small>El código expira en ~60 segundos. Recarga la página si necesitas uno nuevo.</small></p>
+       </div>`
+    : `<div id="code-box" style="display:none"></div>`;
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Vincular WhatsApp por número</title>
+        <meta http-equiv="refresh" content="20">
+        <style>
+          body { font-family: sans-serif; padding: 2rem; max-width: 480px; margin: auto; text-align: center; }
+          input { width: 100%; padding: 0.5rem; font-size: 1rem; box-sizing: border-box; margin-top: 0.4rem; }
+          button { margin-top: 1rem; padding: 0.6rem 1.5rem; background: #25D366; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+          #resultado { margin-top: 1rem; padding: 0.8rem; border-radius: 4px; display: none; }
+          .ok  { background: #d4edda; color: #155724; }
+          .err { background: #f8d7da; color: #721c24; }
+          #code-box { margin-top: 1.5rem; padding: 1rem; background: #f0faf4; border: 1px solid #25D366; border-radius: 8px; }
+        </style>
+      </head>
+      <body>
+        <h2>Vincular WhatsApp por número</h2>
+        <p>Ingresa el número de WhatsApp que quieres vincular (con código de país, sin + ni espacios).</p>
+        <input type="text" id="phone" placeholder="573001234567" />
+        <button onclick="solicitarCodigo()">Obtener código</button>
+        <div id="resultado"></div>
+        ${codeHtml}
+        <script>
+          async function solicitarCodigo() {
+            const phone = document.getElementById('phone').value.trim();
+            if (!phone) { alert('Ingresa un número de teléfono.'); return; }
+            const div = document.getElementById('resultado');
+            div.style.display = 'block';
+            div.className = '';
+            div.textContent = 'Solicitando código...';
+            try {
+              const res = await fetch('/pair-phone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+              });
+              const data = await res.json();
+              if (res.ok && data.code) {
+                div.className = 'ok';
+                div.textContent = '';
+                const box = document.getElementById('code-box');
+                box.style.display = 'block';
+                box.innerHTML = '<p>Ingresa este código en WhatsApp:<br><strong>Menu → Dispositivos vinculados → Vincular con número</strong></p>' +
+                  '<div style="font-size:2.5rem;letter-spacing:0.4rem;font-weight:bold;color:#075e54;margin:1rem 0">' + data.code + '</div>' +
+                  '<p><small>El código expira en ~60 segundos.</small></p>';
+              } else {
+                div.className = 'err';
+                div.textContent = data.error || 'No se pudo obtener el código. Asegúrate de que WhatsApp esté inicializando (el QR debe haberse generado al menos una vez).';
+              }
+            } catch (e) {
+              div.className = 'err';
+              div.textContent = 'Error de red.';
+            }
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+app.post('/pair-phone', async (req, res) => {
+  const { phone } = req.body || {};
+  if (!phone) {
+    return res.status(400).json({ error: 'El campo "phone" es obligatorio (ej: 573001234567).' });
+  }
+  if (isReady) {
+    return res.status(400).json({ error: 'WhatsApp ya está conectado.' });
+  }
+
+  const soloDigitos = String(phone).replace(/\D/g, '');
+  pairingPhoneNumber = soloDigitos;
+
+  // Si ya hay un QR activo, solicitar el código ahora mismo
+  if (lastQr) {
+    try {
+      const code = await client.requestPairingCode(soloDigitos);
+      lastPairingCode = code;
+      console.log(`📱 Código de emparejamiento para ${soloDigitos}: ${code}`);
+      return res.json({ code });
+    } catch (err) {
+      console.error('Error solicitando código de emparejamiento:', err);
+      return res.status(500).json({ error: 'No se pudo obtener el código. Intenta de nuevo.' });
+    }
+  }
+
+  // Si aún no hay QR, el código se pedirá automáticamente cuando el QR llegue
+  return res.json({ message: 'Número registrado. El código se generará cuando WhatsApp esté listo. Recarga /pair en unos segundos.' });
 });
 
 // ── Listar grupos ──────────────────────────────────────────────────────────
@@ -266,6 +400,7 @@ app.get('/status', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Microservicio de WhatsApp escuchando en el puerto ${PORT}`);
   console.log(`QR visual:     http://localhost:${PORT}/qr`);
+  console.log(`Vincular num:  http://localhost:${PORT}/pair`);
   console.log(`Grupos:        http://localhost:${PORT}/groups`);
   console.log(`Envio manual:  http://localhost:${PORT}/send-manual`);
 });
