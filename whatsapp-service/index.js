@@ -27,15 +27,31 @@ client.on('qr', (qr) => {
   qrcode.generate(qr, { small: true });
 });
 
+client.on('authenticated', () => {
+  console.log('✅ WhatsApp AUTENTICADO correctamente.');
+});
+
+client.on('auth_failure', (msg) => {
+  console.error('❌ AUTH_FAILURE:', msg);
+});
+
+client.on('loading_screen', (percent, message) => {
+  console.log(`⏳ WhatsApp cargando ${percent}%: ${message}`);
+});
+
+client.on('change_state', (state) => {
+  console.log('🔄 Estado WhatsApp:', state);
+});
+
 client.on('ready', () => {
   isReady = true;
   lastQr = null;
-  console.log('Cliente de WhatsApp conectado y listo.');
+  console.log('✅ Cliente de WhatsApp CONECTADO Y LISTO.');
 });
 
 client.on('disconnected', (reason) => {
   isReady = false;
-  console.warn('WhatsApp se desconecto:', reason);
+  console.warn('❌ WhatsApp DESCONECTADO:', reason);
 });
 
 client.initialize();
