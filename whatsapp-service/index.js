@@ -1,89 +1,94 @@
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 
 const PORT = process.env.PORT || 3001;
 
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process',
-      '--disable-extensions',
-      '--disable-software-rasterizer'
-    ]
-  },
-});
-
+let sock = null;
 let isReady = false;
 let lastQr = null;
 let lastPairingCode = null;
 let pairingPhoneNumber = null;
 
-client.on('qr', async (qr) => {
-  lastQr = qr;
-  lastPairingCode = null;
-  console.log('Nuevo QR generado. Visita /qr para escanearlo o /pair para vincular por número.');
-  qrcode.generate(qr, { small: true });
+async function conectar() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-  if (pairingPhoneNumber) {
-    try {
-      const code = await client.requestPairingCode(pairingPhoneNumber);
-      lastPairingCode = code;
-      console.log(`📱 Código de emparejamiento para ${pairingPhoneNumber}: ${code}`);
-    } catch (err) {
-      console.error('Error solicitando código de emparejamiento:', err);
-    }
+  let version;
+  try {
+    const { version: v } = await fetchLatestBaileysVersion();
+    version = v;
+  } catch {
+    version = [2, 3000, 1015901307];
   }
-});
 
-client.on('authenticated', () => {
-  console.log('✅ WhatsApp AUTENTICADO correctamente.');
-});
+  sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    browser: ['Barberia', 'Chrome', '120.0.0'],
+  });
 
-client.on('auth_failure', (msg) => {
-  console.error('❌ AUTH_FAILURE:', msg);
-});
+  sock.ev.on('creds.update', saveCreds);
 
-client.on('loading_screen', (percent, message) => {
-  console.log(`⏳ WhatsApp cargando ${percent}%: ${message}`);
-});
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-client.on('change_state', (state) => {
-  console.log('🔄 Estado WhatsApp:', state);
-});
+    if (qr) {
+      lastQr = qr;
+      lastPairingCode = null;
+      console.log('Nuevo QR generado. Visita /qr o /pair para vincular.');
+      qrcode.generate(qr, { small: true });
 
-client.on('ready', () => {
-  isReady = true;
-  lastQr = null;
-  console.log('✅ Cliente de WhatsApp CONECTADO Y LISTO.');
-});
+      if (pairingPhoneNumber) {
+        try {
+          const code = await sock.requestPairingCode(pairingPhoneNumber);
+          lastPairingCode = code;
+          console.log(`📱 Código de emparejamiento para ${pairingPhoneNumber}: ${code}`);
+        } catch (err) {
+          console.error('Error solicitando código de emparejamiento:', err);
+        }
+      }
+    }
 
-client.on('disconnected', (reason) => {
-  isReady = false;
-  lastQr = null;
-  lastPairingCode = null;
-  console.warn('❌ WhatsApp DESCONECTADO:', reason);
-  // Reintentar inicialización después de 5 segundos
-  setTimeout(() => {
-    console.log('🔄 Reintentando inicialización de WhatsApp...');
-    client.initialize().catch(err => console.error('Error al reinicializar:', err));
-  }, 5000);
-});
+    if (connection === 'open') {
+      isReady = true;
+      lastQr = null;
+      lastPairingCode = null;
+      console.log('✅ WhatsApp CONECTADO Y LISTO.');
+    }
 
-client.initialize();
+    if (connection === 'close') {
+      isReady = false;
+      lastQr = null;
+      lastPairingCode = null;
 
-function aChatId(phone) {
+      const statusCode = (lastDisconnect?.error instanceof Boom)
+        ? lastDisconnect.error.output.statusCode
+        : null;
+
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+      console.warn(`❌ WhatsApp DESCONECTADO (código: ${statusCode})`);
+
+      if (shouldReconnect) {
+        console.log('🔄 Reconectando en 5s...');
+        setTimeout(conectar, 5000);
+      } else {
+        console.log('Sesión cerrada. Ve a /pair para vincular de nuevo.');
+      }
+    }
+  });
+}
+
+conectar();
+
+function aJid(phone) {
   const soloDigitos = String(phone).replace(/\D/g, '');
-  return `${soloDigitos}@c.us`;
+  return `${soloDigitos}@s.whatsapp.net`;
 }
 
 const app = express();
@@ -146,7 +151,7 @@ app.get('/pair', (req, res) => {
   const codeHtml = lastPairingCode
     ? `<div id="code-box">
          <p>Ingresa este código en tu app de WhatsApp:<br>
-         <strong>Menu → Dispositivos vinculados → Vincular un dispositivo → Vincular con número de teléfono</strong></p>
+         <strong>Menu &rarr; Dispositivos vinculados &rarr; Vincular un dispositivo &rarr; Vincular con número de teléfono</strong></p>
          <div style="font-size:2.5rem;letter-spacing:0.4rem;font-weight:bold;color:#075e54;margin:1rem 0">${lastPairingCode}</div>
          <p><small>El código expira en ~60 segundos. Recarga la página si necesitas uno nuevo.</small></p>
        </div>`
@@ -195,12 +200,12 @@ app.get('/pair', (req, res) => {
                 div.textContent = '';
                 const box = document.getElementById('code-box');
                 box.style.display = 'block';
-                box.innerHTML = '<p>Ingresa este código en WhatsApp:<br><strong>Menu → Dispositivos vinculados → Vincular con número</strong></p>' +
+                box.innerHTML = '<p>Ingresa este código en WhatsApp:<br><strong>Menu &rarr; Dispositivos vinculados &rarr; Vincular con número</strong></p>' +
                   '<div style="font-size:2.5rem;letter-spacing:0.4rem;font-weight:bold;color:#075e54;margin:1rem 0">' + data.code + '</div>' +
                   '<p><small>El código expira en ~60 segundos.</small></p>';
               } else {
                 div.className = 'err';
-                div.textContent = data.error || 'No se pudo obtener el código. Asegúrate de que WhatsApp esté inicializando (el QR debe haberse generado al menos una vez).';
+                div.textContent = data.error || 'No se pudo obtener el código. Espera unos segundos e intenta de nuevo.';
               }
             } catch (e) {
               div.className = 'err';
@@ -221,14 +226,16 @@ app.post('/pair-phone', async (req, res) => {
   if (isReady) {
     return res.status(400).json({ error: 'WhatsApp ya está conectado.' });
   }
+  if (!sock) {
+    return res.status(503).json({ error: 'El servicio aún está iniciando. Intenta en unos segundos.' });
+  }
 
   const soloDigitos = String(phone).replace(/\D/g, '');
   pairingPhoneNumber = soloDigitos;
 
-  // Si ya hay un QR activo, solicitar el código ahora mismo
   if (lastQr) {
     try {
-      const code = await client.requestPairingCode(soloDigitos);
+      const code = await sock.requestPairingCode(soloDigitos);
       lastPairingCode = code;
       console.log(`📱 Código de emparejamiento para ${soloDigitos}: ${code}`);
       return res.json({ code });
@@ -238,21 +245,18 @@ app.post('/pair-phone', async (req, res) => {
     }
   }
 
-  // Si aún no hay QR, el código se pedirá automáticamente cuando el QR llegue
   return res.json({ message: 'Número registrado. El código se generará cuando WhatsApp esté listo. Recarga /pair en unos segundos.' });
 });
 
 // ── Listar grupos ──────────────────────────────────────────────────────────
 app.get('/groups', async (req, res) => {
   if (!isReady) {
-    return res.status(503).json({ error: 'WhatsApp no está listo. Escanea el QR primero.' });
+    return res.status(503).json({ error: 'WhatsApp no está listo. Vincúlalo primero en /pair.' });
   }
   try {
-    const chats = await client.getChats();
-    const grupos = chats
-      .filter(chat => chat.isGroup)
-      .map(chat => ({ id: chat.id._serialized, name: chat.name }));
-    res.json(grupos);
+    const grupos = await sock.groupFetchAllParticipating();
+    const lista = Object.entries(grupos).map(([id, g]) => ({ id, name: g.subject }));
+    res.json(lista);
   } catch (err) {
     console.error('Error obteniendo grupos:', err);
     res.status(500).json({ error: 'No se pudieron obtener los grupos.' });
@@ -263,7 +267,7 @@ app.get('/groups', async (req, res) => {
 app.get('/send-manual', (req, res) => {
   const estado = isReady
     ? '<span style="color:green">&#9989; Conectado</span>'
-    : '<span style="color:red">&#10060; No conectado &mdash; <a href="/qr">escanea el QR</a> primero</span>';
+    : '<span style="color:red">&#10060; No conectado &mdash; <a href="/pair">vincular por número</a> primero</span>';
 
   res.send(`
     <!DOCTYPE html>
@@ -305,7 +309,6 @@ app.get('/send-manual', (req, res) => {
         <div id="resultado"></div>
 
         <script>
-          // Cargar grupos disponibles
           fetch('/groups')
             .then(r => r.json())
             .then(grupos => {
@@ -319,7 +322,6 @@ app.get('/send-manual', (req, res) => {
             })
             .catch(() => {});
 
-          // Envío via fetch para mostrar resultado inline
           document.getElementById('frm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const fd = new FormData(e.target);
@@ -364,14 +366,14 @@ app.post('/send-message', async (req, res) => {
     return res.status(400).json({ error: 'Debes indicar al menos "phone" o "groupId"' });
   }
   if (!isReady) {
-    return res.status(503).json({ error: 'El cliente de WhatsApp aun no esta listo. Escanea el QR e intenta de nuevo.' });
+    return res.status(503).json({ error: 'El cliente de WhatsApp aún no está listo. Ve a /pair para vincular.' });
   }
 
   const resultados = {};
 
   if (phone) {
     try {
-      await client.sendMessage(aChatId(phone), message);
+      await sock.sendMessage(aJid(phone), { text: message });
       resultados.personal = 'enviado';
     } catch (err) {
       console.error('Error enviando a número personal:', err);
@@ -381,7 +383,7 @@ app.post('/send-message', async (req, res) => {
 
   if (groupId) {
     try {
-      await client.sendMessage(groupId, message);
+      await sock.sendMessage(groupId, { text: message });
       resultados.grupo = 'enviado';
     } catch (err) {
       console.error('Error enviando al grupo:', err);
